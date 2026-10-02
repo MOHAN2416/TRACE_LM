@@ -71,8 +71,10 @@ Temporal Trajectory Features                Uncertainty Features
 
 ### A. Frozen Language Model Backbone
 - **Model:** `gpt2-medium` (355M parameters, 24 transformer layers, embedding dimension $d = 1024$).
-- **Frozen Status:** Strictly verified at startup and during inference:
-  $$\forall p \in \text{model.parameters}(),\; p.\text{requires\_grad} = \text{False}$$
+- **Frozen Status:** Strictly verified at startup and during inference: all model parameters have `requires_grad = False` under `torch.no_grad()` execution:
+  ```python
+  assert all(not p.requires_grad for p in model.parameters())
+  ```
 - **Execution Mode:** `model.eval()` under `torch.no_grad()` execution.
 - **Hardware Compatibility:** Runs locally on CPU (standard laptop, 16 GB RAM). CUDA is detected automatically and used if available, but is not required.
 
@@ -101,8 +103,8 @@ For each generated token $t \ge 1$, the engine extracts **23 base features**:
 7. **Cross-Layer Alignment Cosines (3):**
    - $\cos\phi_t^{(l, l+1)} = \frac{\mathbf{h}_t^{(l)} \cdot \mathbf{h}_t^{(l+1)}}{\|\mathbf{h}_t^{(l)}\|_2 \|\mathbf{h}_t^{(l+1)}\|_2 + 10^{-8}}$ for transitions $3 \to 4$, $4 \to 5$, $5 \to 6$
 
-**Statistical Aggregation:** Over the prefix sub-trajectory up to a checkpoint, each base feature produces 4 summary statistics ($\text{mean}$, $\text{std}$ with $\text{ddof}=1$, $\text{max}$, $\text{min}$), yielding:
-$$23 \text{ base features} \times 4 \text{ statistics} = \mathbf{92 \text{ feature dimensions}}$$
+**Statistical Aggregation:** Over the prefix sub-trajectory up to a checkpoint, each base feature produces 4 summary statistics (`mean`, `std` with `ddof=1`, `max`, `min`), yielding:
+**23 base features × 4 summary statistics = 92 feature dimensions**
 
 ### D. Anomaly Detector
 - **Classifier:** `StandardScaler` followed by `LogisticRegression(max_iter=2000, random_state=42)`.
@@ -113,8 +115,8 @@ $$23 \text{ base features} \times 4 \text{ statistics} = \mathbf{92 \text{ featu
 
 ## 4. Checkpoint Evaluation & Operational Definitions
 
-Inference is evaluated at 4 discrete generation fractions:
-$$\text{Checkpoints} \in \{25\%, 50\%, 75\%, 100\%\}$$
+Inference is evaluated at 4 discrete generation fractions: **25%**, **50%**, **75%**, and **100%**.
+
 For a generation of target length $N$ (default $N = 32$ tokens):
 $$\text{Cutoff}_k = \max(1, \lceil N \times f_k \rceil), \quad f_k \in \{0.25, 0.50, 0.75, 1.00\}$$
 
@@ -126,13 +128,13 @@ $$\text{Cutoff}_k = \max(1, \lceil N \times f_k \rceil), \quad f_k \in \{0.25, 0
 | **100%** | 32 tokens | 0 tokens | Complete 32-token response |
 
 ### Exact Operational Definitions
-- **`FINAL RISK`:** The anomaly score evaluated at the completion of generation ($100\%$ checkpoint, or last reached checkpoint).
+- **`FINAL RISK`:** The anomaly score evaluated at the completion of generation (100% checkpoint, or last reached checkpoint).
 - **`PEAK RISK`:** The maximum anomaly score observed across any evaluated checkpoint in the sequence ($\max_k \text{Risk}_k$).
 - **`SEQUENCE STATUS`:** The trajectory-level anomaly decision. Evaluates to **`SUSPICIOUS`** if **any** evaluated checkpoint crossed the calibrated threshold ($\tau = 0.6900$); otherwise **`NORMAL`**.
 - **`FIRST WARNING`:** The earliest checkpoint chronologically that crossed the threshold. If no checkpoint crossed the threshold, this evaluates to **`None`**.
 - **`DETECTION LEAD TIME`:** Generated tokens remaining from the moment the first warning triggered:
-  $$\text{Lead Time} = N_{\text{planned}} - N_{\text{seen at First Warning}}$$
-  *(For a warning at 25% with $N=32$, $\text{Lead Time} = 32 - 8 = \mathbf{24 \text{ tokens}}$).*
+  $$\text{Lead Time} = N_{\text{planned}} - N_{\text{warning}}$$
+  *(For a warning at 25% with $N = 32$, $\text{Lead Time} = 32 - 8 = 24$ tokens).*
 - **Early-Warning Persistence:** A `NORMAL` final checkpoint risk does **NOT** erase an earlier warning. If an anomaly is manifested at $25\%$, the sequence status remains `SUSPICIOUS`, preserving the alert and lead-time benefit.
 
 ---
@@ -169,7 +171,7 @@ TRACE-LM strictly separates its evaluation into three distinct modalities:
 ---
 
 ### Category A: Controlled Benchmark Results
-Executed under standardized conditions ($T = 0.7$, $p = 0.9$, $\text{max\_new\_tokens} = 32$, threshold $\tau = 0.6900$) via [`tests/test_detector_correction.py`](file:///home/mohan/Desktop/DL/tests/test_detector_correction.py):
+Executed under standardized conditions ($T = 0.7$, $p = 0.9$, `max_new_tokens = 32`, threshold $\tau = 0.6900$) via [`tests/test_detector_correction.py`](file:///home/mohan/Desktop/DL/tests/test_detector_correction.py):
 
 | Benchmark Identifier & Type | Evaluated Prompt Text | 25% Risk | 50% Risk | 75% Risk | 100% Risk | Final Risk | Peak Risk | Threshold | First Warning | Lead Time | Sequence Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -257,7 +259,7 @@ Because open-ended autoregressive sampling ($T=0.7, p=0.9$) produces varying com
 
 ### Category C: Automated Regression Suite (`pytest -v`)
 Executed via `pytest tests/ -v`:
-$$\mathbf{29 \text{ passed in } 24.51\text{s (100\% pass rate, 0 failed)}}$$
+**29 passed in 24.51s (100% pass rate, 0 failed)**
 
 The automated test suite enforces:
 - Checkpoint token count calculations and floor/ceiling index boundaries (`test_checkpoints.py`)
